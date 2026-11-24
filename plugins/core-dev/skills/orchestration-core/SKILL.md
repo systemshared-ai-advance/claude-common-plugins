@@ -1,38 +1,36 @@
 ---
 name: orchestration-core
-description: 複数ステップ（3ステップ以上または複数ファイル）のタスクを委譲・受入判定する際に必ず使用。サブエージェントへの委譲、モデル選択（Haiku/Sonnet/Opus/Codex）、委譲プロンプト作成、成果物の受入判定の前に読む。「実装して」「調査して」「リファクタして」「修正して」「計画して」「レビューして」等の作業依頼の開始時、「どのモデルに任せる」「委譲」「並列で」「コスト削減」「トークン節約」と言われた時に使用。単発の質問応答では使用不可。1〜2行の自明な修正も委譲対象だが、本スキルを読まず Haiku/Sonnet へ直行してよい。
+description: 複数ステップ（3ステップ以上または複数ファイル）のタスクを委譲・受入判定する際に使用。サブエージェントへの委譲、モデル選択（Haiku/Sonnet/Opus/Fable/Codex）、委譲プロンプト作成、成果物の受入判定の前に読む。「実装して」「調査して」「リファクタして」「修正して」「計画して」「レビューして」等の作業依頼の開始時、「どのモデルに任せる」「委譲」「並列で」「コスト削減」「トークン節約」と言われた時に使用。単発の質問応答と、1〜2行の自明な修正だけの依頼では使用不可（後者はメインが直接 Edit する）。
 ---
 
 # オーケストレーション実行手順
 
 > 注（チーム配布版）: Codex（`codex-brief-review`・`/codex:review`・`codex:codex-rescue`）は任意であり、使えない場合は実装者と別の Claude モデルでレビューする（`core-dev:code-reviewer`）。
 
-本スキル（SKILL.md と references/）がモデルルーティング・委譲の実行規律・エスカレーション・結果の検証の正である。`CLAUDE.md`（プロジェクトまたはユーザーのもの）はメインセッションの役割のみを定め、それ以外は本スキルを参照する。メインが Fable 以外（Opus / Sonnet）でも同じ委譲品質を再現するための判定表・雛形・検証手順を提供する。
-
-メインの責務は**委譲と受入判定**のみ。計画立案・レビュー・検証の実作業を含む全ての実作業（実装・修正・調査・計画ドラフト・レビュー・テスト実行・動作確認）はサブエージェントへ。特に複雑または重要な成果物のレビューは Codex へ（実装・調査・計画立案・検証の実作業には使わない）。メインが直接行うのは、受入判定に必要な読み取り専用の証跡確認（`git diff --stat` / `ls` / 先頭数行の Read）のみ。
+本スキル（SKILL.md と references/）がモデルルーティング・委譲の実行規律・エスカレーション・結果の検証の正である。メインセッションの役割（委譲と受入判定。直接行うのは読み取り専用の証跡確認と1〜2行の自明な修正）は `CLAUDE.md`（プロジェクトまたはユーザーのもの）が定める。メインのモデルによらず同じ手順で委譲する。
 
 ## 1. モデルルーティング（即決表）
 
-まず即決ルール。該当したらスコアリング不要。（本表は要約。正は `references/routing.md`。表現が食い違う場合は routing.md に従う）
+該当する行があればそのモデルに割り当てる。該当しない場合だけ `references/routing.md`「Step 2: 判定基準」で決める。
 
 | タスクの性質 | 割当 |
 |---|---|
-| 一括置換・整形・ログ収集・実在チェック・単純抽出・1〜2行の自明修正 | Haiku |
-| 単一ファイル修正・定型テスト追加・通常の探索・資料変換 | Sonnet |
-| Web 検索・軽量な調査 | Haiku / Sonnet + WebSearch（Codex は使わない） |
-| 複雑バグの根本原因調査・横断リファクタ・計画/設計ドラフト作成・特に複雑/重要な実装・調査・仕様深掘り | Opus |
-| コードレビュー・計画レビュー・レビュー観点のセカンドオピニオン（既定） | Codex Luna・effort high（常時。ゲート判定必須。実装・調査・計画立案には使わない） |
-| 最重要タスクの検証・重要な設計・難解なデバッグ・大規模な計画立案 | Fable（調査・実装には使わない） |
-| 10件超の同型タスク（Workflow 化は同型・大量のみ。異種の細粒度タスクは件数によらず Agent の並列 fan-out） | Workflow ツール（Sonnet / Opus） |
-| 作業中にチームメイト同士の連絡が必要な作業（連絡なしの分担は対象外） | Agent Teams。判定は routing.md、手順は `references/agent-teams.md` |
+| 一括置換・整形・ログ収集・リンク/パス実在チェック・単純抽出・機械的な動作確認（テスト実行） | Haiku |
+| 単一ファイル修正・定型テスト追加・通常のコードベース探索・資料の Markdown 変換 | Sonnet |
+| Web 検索・軽量な調査 | Haiku / Sonnet + WebSearch |
+| 複雑バグの根本原因調査・難解なデバッグ・アーキテクチャ横断リファクタ・特に複雑または重要な実装と調査・ライブラリ仕様の深掘り | Opus |
+| 計画立案（実装計画・設計書・PRD のドラフト） | Opus（`core-dev:planner` / `Plan` / `model: opus`）。規模が大きい計画は Fable（`model: fable`）。付随する調査は Opus / Sonnet |
+| コードレビュー・計画レビュー・レビュー観点のセカンドオピニオン | Codex（`/codex-brief-review` 経由。Luna・effort high）。routing.md の Codex ゲートを通す |
+| 最重要タスクの検証とレビュー・重要な設計 | Fable（調査・実装には使わない） |
+| 10件超の同型タスク | Workflow ツール（各段は Sonnet / Opus）。ユーザーが workflow の使用を明示した場合に使い、明示がなければ概算コストを示して確認する。異種のタスクは件数によらず Agent の並列起動 |
+| 作業中にチームメイト同士の連絡が必要な作業 | Agent Teams（判定は routing.md、手順は `references/agent-teams.md`） |
 
-メイン直接の枠は存在しない。自明な修正も Haiku/Sonnet へ委譲する。
-
-- 迷ったら `references/routing.md` の4軸スコアリング、または `/route <タスク内容>` で判定。それでも迷えば一段安いモデルで試す。
-- **effort はモデル既定を使う**: Agent ツールの `effort` と Workflow の `opts.effort` は指定しない。ユーザーが明示的に effort レベルを指示した場合のみ、その値を渡す。詳細は routing.md。
-- Codex はレビュー専用の「役割」。常に Luna・effort high。最重要タスクの検証は Fable へ回す。ファイル I/O を伴う委譲は routing.md の Codex ゲート（読取可否の最終確認日・検証条件）を通す。Web 検索は Codex ではなく Claude + WebSearch ツールを使う。`OPENAI_API_KEY` は設定しない（サブスク定額から API 従量課金に切り替わるため）。
-- **Opus コストガード**（実測でコストの87%が Opus に集中）: Opus 委譲は1タスク単位に分割、委譲前にスコープ宣言、メイン=Opus 時はフェーズ境界で /compact。詳細は routing.md。
-- 2回失敗で1段上へエスカレーション（経緯を引き継ぐ。同一モデルで3回以上リトライしない）。
+- `model` を省略したときのモデルは、エージェント定義の `model` → 環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` → メインのモデルの順で決まる。定義に model を持つエージェントはその model で動く（`core-dev:planner` は opus、`core-dev:code-reviewer` と `core-dev:security-reviewer` は sonnet）。メインと異なるモデルに割り当てるタスクでは `model`（haiku / sonnet / opus / fable）を明示する。`subagent_type: fork` はメインのモデルで動き `model` 指定が効かないため、メインのモデルに割り当ててよいタスクにだけ使う。
+- 迷ったら `references/routing.md`「Step 2: 判定基準」で判定する。それでも迷えば一段安いモデルで試す。
+- effort は指定しない（エージェント定義・環境変数・セッション設定に従う）。ユーザーが明示したレベルだけ渡す（routing.md「effort の指定」）。
+- Codex はレビュー専用（`/codex-brief-review` 経由で Luna・effort high）。依頼前に routing.md の Codex ゲートを通す。
+- Opus への委譲は1タスク単位に分け、委譲文にスコープを書く（routing.md「Opus コストガード」）。
+- 同一タスクで2回失敗したら1段上のモデルへ引き上げる（routing.md「エスカレーション」）。
 
 ## 並列 fan-out（既定動作）
 
@@ -42,40 +40,38 @@ description: 複数ステップ（3ステップ以上または複数ファイル
 
 ## 2. 委譲プロンプト必須6要素
 
-委譲文を書く前に `references/delegation-templates.md` の雛形を Read してコピペ。最低限このチェックリストを満たすこと:
+委譲文は `references/delegation-templates.md` の雛形をコピーして書く。次の6要素を満たす:
 
-1. **英語で書く**: 委譲プロンプト全文を英語で書き、返却も英語で受け取る（"Reply in English." を返却形式に含める）。日本語での委譲は幻覚を誘発しやすいため禁止。ユーザーへの報告時にメインが日本語へ要約する。
-2. **再委譲禁止句と飾らない文章句**（冒頭に必須。チームメイト起動文は例外で雛形7）: "[NO RE-DELEGATION] Execute this task directly yourself using your own Read/Write/Edit/Bash tools. Delegating to other agents or external CLIs (e.g., Codex) is prohibited." と "[PLAIN PROSE] Remove all mannered prose: say what you mean; when a literal phrase is available, use it."
+1. **英語で書く**: 委譲プロンプト全文を英語で書き、返却も英語で受け取る（"Reply in English." を返却形式に含める）。サブエージェントと Agent Teams は英語を使うという運用規則に従う。ユーザーへの報告時にメインが日本語へ要約する。
+2. **共通固定句**: 冒頭に `[NO RE-DELEGATION]` と `[PLAIN PROSE]` の2行を入れる（全文は delegation-templates.md「共通固定句」。チームメイト起動文は雛形7）。
 3. **成果物定義**: 作成・変更するファイルと期待内容を具体的に。
-4. **返却形式**: 結論・要約・file:line のみ。生ログ・全文貼付は禁止と明記。人間向け出力（進捗ナレーション・推論の要約・途中経過）は不要と明記し、出力はメイン/他エージェント宛の最終メッセージ（サブエージェントは Agent の返却。チームメイト→リードのみ SendMessage）のみとする。飾らない散文で書かせる（`[PLAIN PROSE]`）。
-5. **検証可能性**: 変更ファイル一覧・`git diff --stat`・テスト結果の自己報告を要求。
+4. **返却形式**: 結論・要約・file:line だけを返させ、生ログと全文貼付は不要と書く。進捗・推論・途中経過の出力も不要と書く（読むのはメインだけ）。
+5. **検証可能性**: 変更ファイル一覧・`git diff --stat`（jj では `jj diff --stat`）・テスト結果の自己報告を要求。
 6. **出所規律**: 自分がツール結果で裏取りできていない「事実」を委譲文に書かない（ハルシネーション連鎖防止）。
 
-第一手段はメインによるファイル分担で書き込み先を分離すること。分担で衝突を回避できない場合のみ `isolation: "worktree"` を使う（通常のサブエージェント限定。`name` と混ぜない。agent-teams.md）。並列委譲中に作業ツリー全体へ及ぶ git 操作をしない。
+第一手段はメインによるファイル分担で書き込み先を分離すること。分担で衝突を回避できない場合のみ `isolation: "worktree"` を使う（通常のサブエージェント限定。`name` と混ぜない。agent-teams.md）。
 
 ## 3. 委譲後の受入判定と検証委譲
 
-「完了」報告は鵜呑みにしない。`references/verification.md` の裏取り3点セットを委譲完了ごとに回す。役割分担:
+委譲完了ごとに `references/verification.md` の裏取り3点セットを回す。
 
-- **メインが直接行う（検収・読み取り専用のみ）**: 差分確認（`git status` / `git diff --stat`）と生成物の実在確認（`ls` / `wc -l` / 先頭数行の Read）。
-- **委譲する（検証の実作業）**: 動作確認（テスト実行・ビルド・実走）は検証用サブエージェントへ、レビューはモデル分離で委譲（Claude 実装→Codex。同一モデルに自己レビューさせない）。重要成果物（本番影響・セキュリティ・重要ドキュメント）の**レビュー**は Codex を優先（テスト実行等の検証作業は Claude 系が担当）。
+- メインが直接行う（読み取り専用）: 差分確認（`git status` / `git diff --stat`。jj では `jj status` / `jj diff --stat`）と生成物の実在確認（`ls` / `wc -l` / 先頭数行の Read）。
+- 委譲する: 動作確認（テスト実行・ビルド・実走）は検証用サブエージェントへ。レビューは実装と別のモデルへ（Claude 実装 → Codex）。
+- Codex 返却の [CODEX-AUDIT] 判定は verification.md に従う。
 
-Codex 返却は末尾の Self-Audit テーブルを読んでメインが [CODEX-AUDIT: OK/WARN/NG] を判定し、OK でも裏取りは省略しない。
+## 4. トークン節約
 
-## 4. トークン節約の常時規律
+委譲とパイプラインの設計時に `references/token-discipline.md` を適用する（重複呼び出しの排除、選択的実行、結論のみ返却）。
 
-効果順（詳細は `references/token-discipline.md`）:
+## 5. 呼び分け先
 
-1. 重複 LLM 呼び出しの排除（パイプラインの呼び出し回数を数える）
-2. 選択的実行（必要なものだけ処理。「念のため全部」禁止）
-3. 結論のみ返却（メイン文脈を生データで汚染しない）
-4. フェーズ境界で /compact
+以下は既存資産を呼ぶ。本スキルで手順を再定義しない。
 
-## 5. レビューの呼び先（再実装禁止）
-
-Claude 実装分のレビューは既存の手段を呼ぶ。本スキルで手順を再定義しない。
-
-`/codex-brief-review`（Luna・effort high。高速チェックのみ `/codex:review`）。Codex 不可・リミット時は `core-dev:code-reviewer` にフォールバック（リミット回復は待たない）。重要な対象はフォールバックではなくユーザー指示で ChatGPT Astro Pro に手動レビュー
+| 用途 | 呼び先 |
+|---|---|
+| Claude 実装分のレビュー | `/codex-brief-review`（フォールバックと手動レビューは verification.md「モデル分離レビュー」） |
+| 補助レビュー（別サブエージェントによる差分レビュー。Codex レビューの代替にはしない） | `/code-review`（組み込み） |
+| セキュリティ観点の差分レビュー | `/security-review`（組み込み）または `core-dev:security-reviewer` |
 
 ## Origin
 
